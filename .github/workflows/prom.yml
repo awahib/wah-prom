@@ -1,0 +1,85 @@
+# This is a basic workflow to help you get started with Actions
+
+name: wah-prom
+
+# Controls when the action will run. Triggers the workflow on push or pull request
+# events but only for the master branch
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+# A workflow run is made up of one or more jobs that can run sequentially or in parallel
+jobs:
+  # This workflow contains a single job called "build"
+  build:
+    # The type of runner that the job will run on
+    runs-on: centos 8
+
+    # Steps represent a sequence of tasks that will be executed as part of the job
+    steps:
+    # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+    - uses: actions/checkout@v2
+
+    # Runs a single command using the runners shell
+    - name: Run a one-line script
+      run: echo Hello, world!
+
+    # Runs a set of commands using the runners shell
+    - name: Run a multi-line script
+      run: |
+        #!/bin/bash
+PROMETHEUS_VERSION="2.13.0"
+wget https://github.com/prometheus/prometheus/releases/download/v${PROMETHEUS_VERSION}/prometheus-${PROMETHEUS_VERSION}.linux-amd64.tar.gz
+tar -xzvf prometheus-${PROMETHEUS_VERSION}.linux-amd64.tar.gz
+cd prometheus-${PROMETHEUS_VERSION}.linux-amd64/
+# if you just want to start prometheus as root
+#./prometheus --config.file=prometheus.yml
+
+# create user
+useradd --no-create-home --shell /bin/false prometheus
+
+# create directories
+mkdir -p /etc/prometheus
+mkdir -p /var/lib/prometheus
+
+# set ownership
+chown prometheus:prometheus /etc/prometheus
+chown prometheus:prometheus /var/lib/prometheus
+
+# copy binaries
+cp prometheus /usr/local/bin/
+cp promtool /usr/local/bin/
+
+chown prometheus:prometheus /usr/local/bin/prometheus
+chown prometheus:prometheus /usr/local/bin/promtool
+
+# copy config
+cp -r consoles /etc/prometheus
+cp -r console_libraries /etc/prometheus
+cp prometheus.yml /etc/prometheus/prometheus.yml
+
+chown -R prometheus:prometheus /etc/prometheus/consoles
+chown -R prometheus:prometheus /etc/prometheus/console_libraries
+
+# setup systemd
+echo '[Unit]
+Description=Prometheus
+Wants=network-online.target
+After=network-online.target
+[Service]
+User=prometheus
+Group=prometheus
+Type=simple
+ExecStart=/usr/local/bin/prometheus \
+    --config.file /etc/prometheus/prometheus.yml \
+    --storage.tsdb.path /var/lib/prometheus/ \
+    --web.console.templates=/etc/prometheus/consoles \
+    --web.console.libraries=/etc/prometheus/console_libraries
+[Install]
+WantedBy=multi-user.target' > /etc/systemd/system/prometheus.service
+
+systemctl daemon-reload
+systemctl enable prometheus
+systemctl start prometheus
